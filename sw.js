@@ -1,0 +1,58 @@
+// Bump CACHE whenever you deploy — it forces browsers to fetch fresh files.
+const CACHE = 'daily-rounds-v2';
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  const isHTML = req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/');
+
+  if (isHTML) {
+    // Network first: a freshly deployed index.html always wins, with the
+    // cached copy as the offline fallback.
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Everything else (icons, manifest): cache first, refresh in the background.
+  e.respondWith(
+    caches.match(req).then((cached) => {
+      const network = fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => cached);
+      return cached || network;
+    })
+  );
+});

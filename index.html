@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Daily Tracker</title>
+<meta name="description" content="Life, Work, and Golf accountability tracker with sleep and steps" />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0F1B14" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Daily Tracker" />
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg: #0F1B14;
+    --surface: #16241A;
+    --surface-2: #1D2E21;
+    --line: #2A3D2E;
+    --parchment: #EDEAD9;
+    --muted: #8FA089;
+    --fairway: #7FB069;
+    --fairway-dim: #4E6E45;
+    --flag: #C6533D;
+    --sand: #C9B382;
+    --sky: #6FA8C9;
+    --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  *{ box-sizing:border-box; }
+  .app{
+    background: var(--bg);
+    color: var(--parchment);
+    font-family: var(--font-body);
+    min-height: 100%;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 20px 16px 48px;
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(127,176,105,0.08), transparent 40%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+  }
+  .header{ margin-bottom: 14px; }
+  .eyebrow{
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fairway);
+  }
+  .title{
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 32px;
+    letter-spacing: 0.01em;
+    margin: 2px 0 2px;
+  }
+  .date-line{ font-size: 12px; color: var(--muted); }
+  .streak-row{
+    display:flex; align-items:center; gap:8px;
+    margin-top: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .streak-num{ font-family: var(--font-mono); font-size: 20px; color: var(--sand); min-width: 28px; }
+  .streak-label{ font-size: 12px; color: var(--muted); }
+
+  .view-switch{
+    display:flex; gap:6px; margin: 18px 0 16px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+  }
+  .view-btn{
+    flex:1; background:none; border:none; color: var(--muted);
+    font-family: var(--font-display); font-size: 16px; letter-spacing: 0.03em; text-transform: uppercase;
+    padding: 8px 4px; border-radius: 7px; cursor:pointer; transition: background 0.15s, color 0.15s;
+  }
+  .view-btn:focus-visible{ outline: 2px solid var(--fairway); outline-offset: 1px; }
+  .view-btn[data-active="true"]{ background: var(--fairway-dim); color: var(--parchment); }
+
+  /* ---- Today view ---- */
+  .tabs{ display:flex; gap:6px; margin: 4px 0 14px; border-bottom: 1px solid var(--line); }
+  .tab{
+    flex:1; font-family: var(--font-display); font-size: 17px; letter-spacing: 0.03em; text-transform: uppercase;
+    background:none; border:none; color: var(--muted); padding: 8px 4px 12px; cursor:pointer; position: relative;
+  }
+  .tab:focus-visible{ outline: 2px solid var(--fairway); outline-offset: 2px; }
+  .tab[data-active="true"]{ color: var(--parchment); }
+  .tab[data-active="true"]::after{ content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: var(--fairway); }
+  .tab .tab-count{ font-family: var(--font-mono); font-size: 11px; color: var(--fairway); display:block; margin-top: 2px; }
+  .progress-track{ height: 6px; background: var(--surface-2); border-radius: 4px; overflow: hidden; margin-bottom: 18px; }
+  .progress-fill{ height: 100%; background: linear-gradient(90deg, var(--fairway-dim), var(--fairway)); border-radius: 4px; transition: width 0.35s ease; }
+  .list{ display:flex; flex-direction:column; gap:8px; }
+  .row{ display:flex; align-items:center; gap:12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px; }
+  .hole-num{ font-family: var(--font-mono); font-size: 11px; color: var(--muted); width: 18px; text-align:center; flex-shrink:0; }
+  .hole-btn{
+    width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--fairway-dim); background: transparent;
+    flex-shrink:0; cursor:pointer; position: relative; transition: border-color 0.15s;
+  }
+  .hole-btn:focus-visible{ outline: 2px solid var(--sand); outline-offset: 2px; }
+  .hole-btn::after{
+    content:""; position:absolute; inset: 5px; border-radius:50%; background: var(--fairway);
+    transform: scale(0); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1);
+  }
+  .row[data-done="true"] .hole-btn{ border-color: var(--fairway); }
+  .row[data-done="true"] .hole-btn::after{ transform: scale(1); }
+  .item-label{ flex:1; font-size: 15px; }
+  .row[data-done="true"] .item-label{ color: var(--muted); text-decoration: line-through; text-decoration-color: var(--fairway-dim); }
+  .del-btn{ background:none; border:none; color: var(--line); font-size:16px; cursor:pointer; padding: 4px 6px; flex-shrink:0; transition: color 0.15s; }
+  .row:hover .del-btn{ color: var(--flag); }
+  .del-btn:focus-visible{ outline: 1px solid var(--flag); }
+  .add-row{ display:flex; gap:8px; margin-top: 10px; }
+  .add-input{
+    flex:1; background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px;
+    color: var(--parchment); font-family: var(--font-body); font-size: 14px;
+  }
+  .add-input:focus-visible{ outline: 2px solid var(--fairway); }
+  .add-input::placeholder{ color: var(--muted); }
+  .add-btn{
+    background: var(--fairway-dim); border: none; color: var(--parchment); border-radius: 10px; padding: 0 16px;
+    font-family: var(--font-display); font-size: 16px; cursor:pointer;
+  }
+  .add-btn:focus-visible{ outline: 2px solid var(--sand); }
+  .empty{ text-align:center; color: var(--muted); font-size: 13px; padding: 24px 0; }
+
+  /* ---- Vitals card ---- */
+  .vitals-card{
+    margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  .vitals-title{ font-family: var(--font-display); font-size: 18px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--sand); margin-bottom: 10px; }
+  .vitals-grid{ display:flex; gap: 10px; }
+  .vital-field{ flex:1; }
+  .vital-label{ font-size: 11px; color: var(--muted); margin-bottom: 4px; display:block; }
+  .vital-input{
+    width:100%; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px; color: var(--parchment); font-family: var(--font-mono); font-size: 16px;
+  }
+  .vital-input:focus-visible{ outline: 2px solid var(--fairway); }
+  .vital-unit{ font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  /* ---- Progress view ---- */
+  .section-title{ font-family: var(--font-display); font-size: 20px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--sand); margin: 22px 0 10px; }
+  .section-title:first-child{ margin-top: 0; }
+  .heatmap-card{ background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .heatmap-label{ font-size: 13px; margin-bottom: 8px; color: var(--parchment); }
+  .heatmap-row{ display:flex; gap: 2px; }
+  /* Cells divide the row width evenly, so all 28 days fit with no scrolling. */
+  .heat-cell{
+    flex: 1 1 0; min-width: 0; aspect-ratio: 1 / 1;
+    border-radius: 2px; background: var(--surface-2);
+    border: 1px solid var(--line); position: relative;
+  }
+  /* Opacity on a pseudo-element, so a perfect day's ring stays full strength. */
+  .heat-cell[data-filled="true"]{ border-color: transparent; }
+  .heat-cell[data-filled="true"]::after{
+    content:""; position:absolute; inset:-1px; border-radius:3px;
+    background: inherit; opacity: var(--cell-alpha, 1);
+  }
+  .heat-cell[data-perfect="true"]{
+    box-shadow: 0 0 0 1.2px var(--parchment), 0 0 5px rgba(127,176,105,0.45);
+    z-index: 1;
+  }
+  .heatmap-label{ display:flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .heat-count{ font-family: var(--font-mono); font-size: 11px; color: var(--sand); }
+  .heat-legend{
+    display:flex; justify-content: space-between; align-items:center;
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+    padding: 2px 2px 4px; letter-spacing: 0.04em;
+  }
+  .legend-scale{ display:inline-flex; align-items:center; gap: 4px; }
+  .legend-scale .lg{
+    width: 11px; height: 11px; border-radius: 2px; display:inline-block;
+    border: 1px solid var(--line);
+  }
+  .legend-scale .lg[data-perfect="true"]{ box-shadow: 0 0 0 1.5px var(--parchment); border-color: transparent; }
+  .chart-foot{
+    display:flex; justify-content: space-between; margin-top: 6px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted); letter-spacing: 0.04em;
+  }
+  text.ax{ font-family: var(--font-mono); font-size: 8.5px; fill: var(--muted); }
+  .chart-card{ background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .chart-label{ font-size: 13px; color: var(--parchment); margin-bottom: 8px; display:flex; justify-content: space-between; }
+  .chart-label .avg{ color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+  .no-data{ color: var(--muted); font-size: 12px; text-align:center; padding: 18px 0; }
+
+  /* ---- Auth overlay ---- */
+  #auth-overlay{
+    position: fixed; inset: 0; background: var(--bg); z-index: 100;
+    display:flex; align-items:center; justify-content:center; padding: 24px;
+  }
+  .auth-card{ width:100%; max-width: 340px; }
+  .auth-eyebrow{ font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fairway); }
+  .auth-title{ font-family: var(--font-display); font-weight: 600; font-size: 30px; margin: 2px 0 6px; color: var(--parchment); }
+  .auth-sub{ font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+  .auth-field{ margin-bottom: 10px; }
+  .auth-input{
+    width:100%; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; color: var(--parchment); font-family: var(--font-body); font-size: 15px;
+  }
+  .auth-input:focus-visible{ outline: 2px solid var(--fairway); }
+  .auth-btn-row{ display:flex; gap: 8px; margin-top: 14px; }
+  .auth-btn{
+    flex:1; border-radius: 8px; padding: 12px; font-family: var(--font-display); font-size: 16px;
+    letter-spacing: 0.02em; cursor:pointer; border: none;
+  }
+  .auth-btn.primary{ background: var(--fairway-dim); color: var(--parchment); }
+  .auth-btn.secondary{ background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+  .auth-btn:focus-visible{ outline: 2px solid var(--sand); }
+  .auth-error{ color: var(--flag); font-size: 12px; margin-top: 10px; min-height: 14px; line-height: 1.4; }
+  .auth-error[data-tone="good"]{ color: var(--fairway); }
+  .auth-submit{ width: 100%; margin-top: 14px; }
+  .auth-alt{ display:flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
+  .auth-boot{
+    font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    letter-spacing: 0.06em; padding: 18px 0;
+  }
+  .link-btn{
+    background:none; border:none; padding: 4px 0; cursor:pointer;
+    color: var(--muted); font-family: var(--font-body); font-size: 12px;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .link-btn:hover{ color: var(--fairway); }
+  .link-btn:focus-visible{ outline: 2px solid var(--fairway); outline-offset: 2px; border-radius: 4px; }
+  .account-row{
+    display:flex; align-items:center; justify-content: space-between; gap: 10px; margin-top: 10px;
+  }
+  .account-email{
+    font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    overflow:hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sync-status{
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+    text-align:center; margin-top: 14px; letter-spacing: 0.04em;
+  }
+  .sync-status.inline{ text-align:left; margin-top: 4px; }
+</style>
+<style>
+  html, body { margin:0; padding:0; background: #0F1B14; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-eyebrow" id="auth-eyebrow">Daily Tracker</div>
+    <div class="auth-title" id="auth-title">Welcome back</div>
+    <div class="auth-sub" id="auth-sub">Sign in to pick up your rounds on any device.</div>
+
+    <div class="auth-boot" id="auth-boot">Checking your session&hellip;</div>
+
+    <div id="auth-form" style="display:none;">
+      <div class="auth-field" id="field-name" style="display:none;">
+        <input class="auth-input" id="auth-name" type="text" placeholder="First name" autocomplete="given-name" />
+      </div>
+      <div class="auth-field">
+        <input class="auth-input" id="auth-email" type="email" placeholder="Email" autocomplete="username" inputmode="email" />
+      </div>
+      <div class="auth-field">
+        <input class="auth-input" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" />
+      </div>
+      <button class="auth-btn primary auth-submit" id="auth-submit">Sign in</button>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-alt">
+        <button class="link-btn" id="auth-forgot">Forgot password?</button>
+        <button class="link-btn" id="auth-switch">Create an account</button>
+      </div>
+      <div class="sync-status" id="auth-skip" style="cursor:pointer; text-decoration:underline;">Use offline on this device only</div>
+    </div>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none;">
+  <div class="header">
+    <div class="eyebrow" id="app-eyebrow">Daily Tracker</div>
+    <div class="title" id="greeting">Today</div>
+    <div class="date-line" id="date-line"></div>
+    <div class="account-row">
+      <span class="account-email" id="account-email">&mdash;</span>
+      <button class="link-btn" id="sign-out" style="display:none;">Sign out</button>
+    </div>
+    <div class="sync-status inline" id="sync-status">&mdash;</div>
+    <div class="streak-row">
+      <span class="streak-num" id="streak-num">0</span>
+      <span class="streak-label">day streak</span>
+      <span class="streak-label" style="margin-left:auto;font-family:var(--font-mono);font-size:11px;">best <span id="best-streak">0</span></span>
+    </div>
+  </div>
+
+  <div class="view-switch" id="view-switch">
+    <button class="view-btn" data-view="today">Today</button>
+    <button class="view-btn" data-view="progress">Progress</button>
+  </div>
+
+  <div id="today-view">
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <div class="list" id="list"></div>
+    <div class="add-row">
+      <input class="add-input" id="add-input" type="text" placeholder="Add a task&hellip;" />
+      <button class="add-btn" id="add-btn">Add</button>
+    </div>
+
+    <div class="vitals-card">
+      <div class="vitals-title">Vitals</div>
+      <div class="vitals-grid">
+        <div class="vital-field">
+          <label class="vital-label" for="sleep-input">Sleep score (Garmin)</label>
+          <input class="vital-input" id="sleep-input" type="number" min="0" max="100" placeholder="&mdash;" />
+          <div class="vital-unit">0&ndash;100</div>
+        </div>
+        <div class="vital-field">
+          <label class="vital-label" for="steps-input">Steps</label>
+          <input class="vital-input" id="steps-input" type="number" min="0" placeholder="&mdash;" />
+          <div class="vital-unit">today</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="progress-view" style="display:none;">
+    <div class="section-title">Consistency</div>
+    <div id="heatmaps"></div>
+    <div class="section-title">Sleep score</div>
+    <div class="chart-card" id="sleep-chart"></div>
+    <div class="section-title">Steps</div>
+    <div class="chart-card" id="steps-chart"></div>
+  </div>
+</div>
+<script>
+// ======================================================================
+// FIREBASE SETUP — paste your project's config below (see README notes).
+// Create a free project at https://console.firebase.google.com
+//  1. Build > Authentication > Sign-in method > enable Email/Password
+//  2. Build > Firestore Database > Create database (production mode)
+//  3. Project settings (gear icon) > General > Your apps > Web app > copy config
+// ======================================================================
+const APP_VERSION = 'v2';
+
+const FIREBASE_CONFIG = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "PASTE_PROJECT.firebaseapp.com",
+  projectId: "PASTE_PROJECT_ID",
+  storageBucket: "PASTE_PROJECT.appspot.com",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId: "PASTE_APP_ID"
+};
+
+let fbApp = null, fbAuth = null, fbDb = null, fbUid = null, fbDocRef = null;
+let syncReady = false;
+let unsubscribeRemote = null;
+
+// Each account gets its own slice of local storage, so two people signing in
+// on the same phone never see each other's data.
+const LEGACY_NS = 'dailyrounds:';
+window.DATA_NS = 'dr:local:';
+
+function setNamespace(uid){ window.DATA_NS = 'dr:' + uid + ':'; }
+
+function namespaceKeys(prefix){
+  const out = [];
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf(prefix) === 0) out.push(k);
+  }
+  return out;
+}
+
+// One-time lift of data saved before accounts existed, into the first account
+// that signs in on this device.
+function migrateLegacyData(){
+  if(localStorage.getItem('dr:migrated')) return;
+  const legacy = namespaceKeys(LEGACY_NS);
+  if(legacy.length === 0){ localStorage.setItem('dr:migrated', '1'); return; }
+  legacy.forEach(full => {
+    const bare = full.slice(LEGACY_NS.length);
+    if(localStorage.getItem(window.DATA_NS + bare) === null){
+      localStorage.setItem(window.DATA_NS + bare, localStorage.getItem(full));
+    }
+  });
+  localStorage.setItem('dr:migrated', '1');
+}
+
+function clearLocalAccountData(){
+  namespaceKeys(window.DATA_NS).forEach(k => localStorage.removeItem(k));
+}
+
+function firebaseConfigured(){
+  return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('PASTE') === -1;
+}
+
+// Firebase error codes are not written for humans. These are.
+const AUTH_MESSAGES = {
+  'auth/invalid-email': "That email address doesn't look right.",
+  'auth/missing-email': 'Enter your email address.',
+  'auth/missing-password': 'Enter your password.',
+  'auth/wrong-password': "Email and password don't match.",
+  'auth/invalid-credential': "Email and password don't match.",
+  'auth/user-not-found': 'No account uses that email yet. Create one below.',
+  'auth/email-already-in-use': 'That email already has an account. Sign in instead.',
+  'auth/weak-password': 'Passwords need at least 6 characters.',
+  'auth/too-many-requests': 'Too many attempts. Wait a minute, then try again.',
+  'auth/network-request-failed': 'No connection. Check your internet and try again.',
+  'auth/operation-not-allowed': 'Email sign-in is switched off in your Firebase project. Turn it on under Authentication.',
+  'auth/user-disabled': 'This account has been disabled.'
+};
+
+function authMessage(e){
+  return AUTH_MESSAGES[e && e.code] || 'Something went wrong. Try again in a moment.';
+}
+
+function setSyncStatus(text){
+  const el = document.getElementById('sync-status');
+  if(el) el.textContent = text;
+}
+
+function initFirebase(){
+  if(!firebaseConfigured()){
+    const el = document.getElementById('auth-error');
+    if(el){
+      el.setAttribute('data-tone', 'bad');
+      el.textContent = 'This copy of index.html still has the PASTE_ placeholders in it — step 6 of SETUP.md. You can use the app offline meanwhile.';
+    }
+    return null;
+  }
+  if(!fbApp){
+    fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb = firebase.firestore();
+    // Stay signed in after the app is closed and reopened.
+    fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+  }
+  return fbApp;
+}
+
+async function pushKeyToCloud(key, value){
+  if(!syncReady || !fbDocRef) return;
+  try{ await fbDocRef.set({ [key]: value }, { merge: true }); setSyncStatus('synced just now'); }
+  catch(e){ setSyncStatus('sync error — will retry'); }
+}
+
+async function pullCloudIntoLocal(){
+  const snap = await fbDocRef.get();
+  if(snap.exists){
+    const data = snap.data();
+    Object.keys(data).forEach(k => {
+      if(typeof data[k] === 'string') localStorage.setItem(window.DATA_NS + k, data[k]);
+    });
+  } else {
+    const seed = {};
+    namespaceKeys(window.DATA_NS).forEach(fullKey => {
+      seed[fullKey.slice(window.DATA_NS.length)] = localStorage.getItem(fullKey);
+    });
+    await fbDocRef.set(seed, { merge: true });
+  }
+}
+
+function listenForRemoteChanges(){
+  unsubscribeRemote = fbDocRef.onSnapshot((snap) => {
+    if(!snap.exists) return;
+    const data = snap.data();
+    let changed = false;
+    Object.keys(data).forEach(k => {
+      const local = localStorage.getItem(window.DATA_NS + k);
+      if(typeof data[k] === 'string' && data[k] !== local){
+        localStorage.setItem(window.DATA_NS + k, data[k]);
+        changed = true;
+      }
+    });
+    if(changed && window.__reloadAppFromStorage){
+      window.__reloadAppFromStorage();
+      setSyncStatus('updated from another device');
+    }
+  }, () => setSyncStatus('sync connection lost'));
+}
+
+async function completeSignIn(user){
+  fbUid = user.uid;
+  setNamespace(fbUid);
+  migrateLegacyData();
+  fbDocRef = fbDb.collection('users').doc(fbUid);
+
+  window.__displayName = user.displayName || '';
+  document.getElementById('account-email').textContent = user.email || '';
+  document.getElementById('sign-out').style.display = '';
+
+  setSyncStatus('syncing…');
+  try{
+    await pullCloudIntoLocal();
+    syncReady = true;
+    listenForRemoteChanges();
+    setSyncStatus('synced');
+  }catch(e){
+    setSyncStatus('offline — saved on this device');
+  }
+
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  if(window.__startApp) window.__startApp();
+}
+
+async function signOut(){
+  if(unsubscribeRemote){ unsubscribeRemote(); unsubscribeRemote = null; }
+  syncReady = false;
+  // Wipe this account's cached copy so the next person on this phone sees nothing.
+  clearLocalAccountData();
+  try{ await fbAuth.signOut(); }catch(e){}
+  location.reload();
+}
+
+function wireAuthUI(){
+  const emailEl = document.getElementById('auth-email');
+  const passEl = document.getElementById('auth-password');
+  const nameEl = document.getElementById('auth-name');
+  const errEl = document.getElementById('auth-error');
+  const titleEl = document.getElementById('auth-title');
+  const subEl = document.getElementById('auth-sub');
+  const submitEl = document.getElementById('auth-submit');
+  const switchEl = document.getElementById('auth-switch');
+  const bootEl = document.getElementById('auth-boot');
+  const formEl = document.getElementById('auth-form');
+
+  let mode = 'signin';
+  let busy = false;
+
+  function say(text, tone){
+    errEl.textContent = text || '';
+    errEl.setAttribute('data-tone', tone || 'bad');
+  }
+
+  function showForm(){
+    bootEl.style.display = 'none';
+    formEl.style.display = '';
+  }
+
+  function setMode(next){
+    mode = next;
+    const creating = mode === 'signup';
+    titleEl.textContent = creating ? 'Create your account' : 'Welcome back';
+    subEl.textContent = creating
+      ? 'One account, every device. Your data is only readable when you are signed in.'
+      : 'Sign in to pick up your rounds on any device.';
+    document.getElementById('field-name').style.display = creating ? '' : 'none';
+    submitEl.textContent = creating ? 'Create account' : 'Sign in';
+    switchEl.textContent = creating ? 'I already have an account' : 'Create an account';
+    document.getElementById('auth-forgot').style.display = creating ? 'none' : '';
+    passEl.setAttribute('autocomplete', creating ? 'new-password' : 'current-password');
+    say('');
+  }
+
+  async function submit(){
+    if(busy) return;
+    say('');
+    if(!initFirebase()) return;
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+    if(!email){ say('Enter your email address.'); return; }
+    if(!password){ say('Enter your password.'); return; }
+    if(mode === 'signup' && password.length < 6){ say('Passwords need at least 6 characters.'); return; }
+
+    busy = true;
+    submitEl.textContent = mode === 'signup' ? 'Creating…' : 'Signing in…';
+    try{
+      if(mode === 'signup'){
+        const cred = await fbAuth.createUserWithEmailAndPassword(email, password);
+        const name = nameEl.value.trim();
+        if(name) await cred.user.updateProfile({ displayName: name });
+      } else {
+        await fbAuth.signInWithEmailAndPassword(email, password);
+      }
+    }catch(e){
+      say(authMessage(e));
+      busy = false;
+      setMode(mode);
+    }
+  }
+
+  submitEl.addEventListener('click', submit);
+  [nameEl, emailEl, passEl].forEach(el => {
+    el.addEventListener('keydown', (e) => { if(e.key === 'Enter') submit(); });
+  });
+
+  switchEl.addEventListener('click', () => setMode(mode === 'signin' ? 'signup' : 'signin'));
+
+  document.getElementById('auth-forgot').addEventListener('click', async () => {
+    if(!initFirebase()) return;
+    const email = emailEl.value.trim();
+    if(!email){ say('Enter your email address first, then tap this again.'); return; }
+    try{
+      await fbAuth.sendPasswordResetEmail(email);
+      say('Reset link sent. Check your inbox.', 'good');
+    }catch(e){ say(authMessage(e)); }
+  });
+
+  document.getElementById('auth-skip').addEventListener('click', () => {
+    window.DATA_NS = 'dr:local:';
+    migrateLegacyData();
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    setSyncStatus('offline — this device only');
+    if(window.__startApp) window.__startApp();
+  });
+
+  document.getElementById('sign-out').addEventListener('click', signOut);
+
+  const stampA = document.getElementById('auth-eyebrow');
+  const stampB = document.getElementById('app-eyebrow');
+  if(stampA) stampA.textContent = 'Daily Tracker \u00b7 ' + APP_VERSION;
+  if(stampB) stampB.textContent = 'Daily Tracker \u00b7 ' + APP_VERSION;
+
+  setMode('signin');
+
+  if(initFirebase()){
+    fbAuth.onAuthStateChanged((user) => {
+      if(user){ completeSignIn(user); }
+      else { showForm(); }
+    });
+  } else {
+    showForm();
+    initFirebase();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', wireAuthUI);
+
+(function(){
+  const CATS = [
+    { id: 'life', label: 'Life', color: '#7FB069' },
+    { id: 'work', label: 'Work', color: '#6FA8C9' },
+    { id: 'golf', label: 'Golf', color: '#C9B382' }
+  ];
+  const DEFAULT_ITEMS = {
+    life: ['Brush teeth', 'Shower', 'Face wash', 'Retainers', 'Pray', 'Breakfast', 'Lunch', 'Dinner'],
+    work: ['Go Range dome concept', 'Jubail water integration'],
+    golf: ['Gym', 'Putting', 'Chipping', 'Range', 'Course']
+  };
+  const HEATMAP_DAYS = 28;
+  const TREND_DAYS = 14;
+
+  let items = null;
+  let completions = {};
+  let activeCat = 'life';
+  let activeView = 'today';
+  let todayKey = null;
+
+  function dateKey(d){
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  function uid(){ return 'i' + Math.random().toString(36).slice(2,9); }
+  function lastNDates(n){
+    const arr = [];
+    const cursor = new Date();
+    for(let i = 0; i < n; i++){
+      arr.unshift(dateKey(cursor));
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return arr;
+  }
+
+  function NS(){ return window.DATA_NS || 'dr:local:'; }
+  async function safeGet(key){
+    try{
+      return localStorage.getItem(NS() + key);
+    }catch(e){ return null; }
+  }
+  async function safeSet(key, value){
+    try{ localStorage.setItem(NS() + key, value); }catch(e){}
+    pushKeyToCloud(key, value);
+  }
+
+  // Ticks are stored against a slug of the item's label, not a random id.
+  // Random ids are regenerated whenever the list is re-seeded, which silently
+  // orphaned every past record. Slugs survive that.
+  function slugify(label){
+    return String(label).toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'item';
+  }
+
+  function assignKeys(byCat){
+    const seen = {};
+    CATS.forEach(c => {
+      (byCat[c.id] || []).forEach(it => {
+        if(!it.key){
+          let base = c.id + ':' + slugify(it.label), k = base, n = 2;
+          while(seen[k]){ k = base + '-' + n; n++; }
+          it.key = k;
+        }
+        seen[it.key] = true;
+      });
+    });
+    return byCat;
+  }
+
+  async function loadItems(){
+    const raw = await safeGet('items');
+    if(raw){
+      const parsed = JSON.parse(raw);
+      const before = JSON.stringify(parsed);
+      assignKeys(parsed);
+      if(JSON.stringify(parsed) !== before) await safeSet('items', JSON.stringify(parsed));
+      return parsed;
+    }
+    const seeded = {};
+    CATS.forEach(c => { seeded[c.id] = DEFAULT_ITEMS[c.id].map(label => ({ id: uid(), label })); });
+    assignKeys(seeded);
+    await safeSet('items', JSON.stringify(seeded));
+    return seeded;
+  }
+
+  // Rewrite old id-keyed records to slug keys, once, so existing history is
+  // not thrown away.
+  async function migrateCompletionKeys(){
+    if(await safeGet('keyed')) return;
+    const idToKey = {};
+    CATS.forEach(c => items[c.id].forEach(it => { if(it.id) idToKey[it.id] = it.key; }));
+    const prefix = NS() + 'completions:';
+    const keys = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(prefix) === 0) keys.push(k.slice(NS().length));
+    }
+    for(const storeKey of keys){
+      const raw = await safeGet(storeKey);
+      if(!raw) continue;
+      let rec;
+      try{ rec = JSON.parse(raw); }catch(e){ continue; }
+      const out = {}; let changed = false;
+      Object.keys(rec).forEach(k => {
+        if(idToKey[k]){ out[idToKey[k]] = rec[k]; changed = true; }
+        else { out[k] = rec[k]; }
+      });
+      if(changed) await safeSet(storeKey, JSON.stringify(out));
+    }
+    await safeSet('keyed', '1');
+  }
+  async function saveItems(){ await safeSet('items', JSON.stringify(items)); }
+  async function loadCompletions(key){
+    const raw = await safeGet('completions:' + key);
+    return raw ? JSON.parse(raw) : {};
+  }
+  async function saveCompletions(){
+    await safeSet('completions:' + todayKey, JSON.stringify(completions));
+    await safeSet('roster:' + todayKey, JSON.stringify(allItemKeys()));
+  }
+  async function loadRoster(key){
+    const raw = await safeGet('roster:' + key);
+    if(!raw) return null;
+    try{ return JSON.parse(raw); }catch(e){ return null; }
+  }
+  async function loadMetrics(key){
+    const raw = await safeGet('metrics:' + key);
+    return raw ? JSON.parse(raw) : { sleepScore: null, steps: null };
+  }
+  async function saveMetrics(m){ await safeSet('metrics:' + todayKey, JSON.stringify(m)); }
+
+  function allItemKeys(){
+    let ks = [];
+    CATS.forEach(c => items[c.id].forEach(it => ks.push(it.key)));
+    return ks;
+  }
+
+  // A day is complete when every item that existed THAT day was ticked.
+  // Falling back to today's list would let a newly added item retroactively
+  // break every perfect day behind it.
+  async function dayIsComplete(key, comp){
+    if(!comp) return false;
+    const roster = (await loadRoster(key)) || allItemKeys();
+    if(roster.length === 0) return false;
+    return roster.every(k => !!comp[k]);
+  }
+
+  async function computeStreak(){
+    let streak = 0;
+    const cursor = new Date();
+    for(let i = 0; i < 365; i++){
+      const key = dateKey(cursor);
+      const raw = await safeGet('completions:' + key);
+      const comp = raw ? JSON.parse(raw) : null;
+      const complete = await dayIsComplete(key, comp);
+      // Today still being in progress shouldn't zero out yesterday's streak.
+      if(key === todayKey && !complete){ cursor.setDate(cursor.getDate() - 1); continue; }
+      if(!complete) break;
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  async function computeBestStreak(){
+    let best = 0, run = 0;
+    const cursor = new Date();
+    for(let i = 0; i < 365; i++){
+      const key = dateKey(cursor);
+      const raw = await safeGet('completions:' + key);
+      const comp = raw ? JSON.parse(raw) : null;
+      if(await dayIsComplete(key, comp)){ run++; if(run > best) best = run; }
+      else if(!(key === todayKey)){ run = 0; }
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return best;
+  }
+
+  // ---------- Today view ----------
+  function renderToday(){
+    const tabsEl = document.getElementById('tabs');
+    tabsEl.innerHTML = '';
+    CATS.forEach(c => {
+      const catItems = items[c.id];
+      const done = catItems.filter(it => completions[it.key]).length;
+      const btn = document.createElement('button');
+      btn.className = 'tab';
+      btn.setAttribute('role','tab');
+      btn.setAttribute('data-active', String(c.id === activeCat));
+      btn.innerHTML = c.label + '<span class="tab-count">' + done + '/' + catItems.length + '</span>';
+      btn.addEventListener('click', () => { activeCat = c.id; renderToday(); });
+      tabsEl.appendChild(btn);
+    });
+
+    const catItems = items[activeCat];
+    const done = catItems.filter(it => completions[it.key]).length;
+    const pct = catItems.length ? Math.round((done / catItems.length) * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+
+    const listEl = document.getElementById('list');
+    listEl.innerHTML = '';
+    if(catItems.length === 0){
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Nothing here yet. Add one below.';
+      listEl.appendChild(empty);
+    }
+    catItems.forEach((it, idx) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.setAttribute('data-done', String(!!completions[it.key]));
+
+      const num = document.createElement('span');
+      num.className = 'hole-num';
+      num.textContent = idx + 1;
+
+      const holeBtn = document.createElement('button');
+      holeBtn.className = 'hole-btn';
+      holeBtn.setAttribute('aria-label', 'Mark ' + it.label + (completions[it.key] ? ' incomplete' : ' complete'));
+      holeBtn.addEventListener('click', async () => {
+        completions[it.key] = !completions[it.key];
+        await saveCompletions();
+        renderToday();
+        refreshStreak();
+      });
+
+      const label = document.createElement('span');
+      label.className = 'item-label';
+      label.textContent = it.label;
+
+      const del = document.createElement('button');
+      del.className = 'del-btn';
+      del.setAttribute('aria-label', 'Remove ' + it.label);
+      del.textContent = '✕';
+      del.addEventListener('click', async () => {
+        items[activeCat] = items[activeCat].filter(x => x.key !== it.key);
+        delete completions[it.key];
+        await saveItems();
+        await saveCompletions();
+        renderToday();
+        refreshStreak();
+      });
+
+      row.appendChild(num);
+      row.appendChild(holeBtn);
+      row.appendChild(label);
+      row.appendChild(del);
+      listEl.appendChild(row);
+    });
+  }
+
+  async function refreshStreak(){
+    const s = await computeStreak();
+    document.getElementById('streak-num').textContent = s;
+  }
+
+  async function addItem(){
+    const input = document.getElementById('add-input');
+    const val = input.value.trim();
+    if(!val) return;
+    items[activeCat].push({ id: uid(), label: val });
+    assignKeys(items);
+    input.value = '';
+    await saveItems();
+    // Rewrite today's roster so the new item counts from today, not backwards.
+    await saveCompletions();
+    renderToday();
+    refreshStreak();
+  }
+
+  // ---------- Progress view ----------
+  const HEAT_STEPS = [0, 0.25, 0.5, 0.75, 1];
+
+  function heatStyle(ratio, color){
+    if(ratio <= 0) return { bg: 'var(--surface-2)', border: 'var(--line)', ring: false };
+    let step = HEAT_STEPS.findIndex(t => ratio <= t);
+    if(step < 1) step = 1;
+    const alpha = [0, 0.28, 0.5, 0.72, 1][step];
+    return {
+      bg: color,
+      alpha: alpha,
+      border: ratio >= 1 ? color : 'var(--line)',
+      ring: ratio >= 1
+    };
+  }
+
+  function heatCell(ratio, color, title){
+    const st = heatStyle(ratio, color);
+    const cell = document.createElement('div');
+    cell.className = 'heat-cell';
+    if(ratio > 0){
+      cell.style.background = st.bg;
+      cell.style.setProperty('--cell-alpha', String(st.alpha));
+      cell.setAttribute('data-filled', 'true');
+    }
+    if(st.ring) cell.setAttribute('data-perfect', 'true');
+    cell.title = title;
+    return cell;
+  }
+
+  async function renderProgress(){
+    const dates = lastNDates(HEATMAP_DAYS);
+    const dayData = {}, rosters = {};
+    for(const d of dates){
+      const raw = await safeGet('completions:' + d);
+      dayData[d] = raw ? JSON.parse(raw) : {};
+      rosters[d] = await loadRoster(d);
+    }
+
+    const heatmapsEl = document.getElementById('heatmaps');
+    heatmapsEl.innerHTML = '';
+
+    // Overall strip first — this is the one that answers "did I have a perfect day".
+    const allKeys = allItemKeys();
+    let perfectDays = 0;
+    const overall = document.createElement('div');
+    overall.className = 'heatmap-card';
+    const oLabel = document.createElement('div');
+    oLabel.className = 'heatmap-label';
+    const oRow = document.createElement('div');
+    oRow.className = 'heatmap-row';
+    dates.forEach(d => {
+      const comp = dayData[d];
+      const roster = rosters[d] || allKeys;
+      const total = roster.length;
+      const done = roster.filter(k => comp[k]).length;
+      const ratio = total ? done / total : 0;
+      if(ratio >= 1 && total > 0) perfectDays++;
+      oRow.appendChild(heatCell(ratio, 'var(--fairway)', d + ' \u2014 ' + done + '/' + total + (ratio >= 1 ? ' \u2713 perfect' : '')));
+    });
+    oLabel.innerHTML = '<span>Everything \u2014 last ' + HEATMAP_DAYS + ' days</span><span class="heat-count">' + perfectDays + ' perfect</span>';
+    overall.appendChild(oLabel);
+    overall.appendChild(oRow);
+    heatmapsEl.appendChild(overall);
+
+    CATS.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'heatmap-card';
+      const label = document.createElement('div');
+      label.className = 'heatmap-label';
+      const row = document.createElement('div');
+      row.className = 'heatmap-row';
+      const catKeys = items[c.id].map(it => it.key);
+      let full = 0;
+      dates.forEach(d => {
+        const comp = dayData[d];
+        const roster = rosters[d] ? rosters[d].filter(k => k.indexOf(c.id + ':') === 0) : catKeys;
+        const total = roster.length;
+        const done = roster.filter(k => comp[k]).length;
+        const ratio = total ? done / total : 0;
+        if(ratio >= 1 && total > 0) full++;
+        row.appendChild(heatCell(ratio, c.color, d + ' \u2014 ' + done + '/' + total));
+      });
+      label.innerHTML = '<span>' + c.label + '</span><span class="heat-count">' + full + ' full</span>';
+      card.appendChild(label);
+      card.appendChild(row);
+      heatmapsEl.appendChild(card);
+    });
+
+    const legend = document.createElement('div');
+    legend.className = 'heat-legend';
+    legend.innerHTML = '<span>' + dates[0].slice(5) + '</span>' +
+      '<span class="legend-scale">less' +
+      '<i class="lg" style="background:var(--surface-2)"></i>' +
+      '<i class="lg" style="background:var(--fairway);opacity:.28"></i>' +
+      '<i class="lg" style="background:var(--fairway);opacity:.5"></i>' +
+      '<i class="lg" style="background:var(--fairway);opacity:.72"></i>' +
+      '<i class="lg" data-perfect="true" style="background:var(--fairway)"></i>' +
+      'more</span><span>today</span>';
+    heatmapsEl.appendChild(legend);
+
+    const best = await computeBestStreak();
+    const bestEl = document.getElementById('best-streak');
+    if(bestEl) bestEl.textContent = best;
+
+    const trendDates = lastNDates(TREND_DAYS);
+    const metrics = {};
+    for(const d of trendDates){ metrics[d] = await loadMetrics(d); }
+    renderSleepChart(trendDates, metrics);
+    renderStepsChart(trendDates, metrics);
+  }
+
+  function svgOpen(w, h){
+    // No preserveAspectRatio override: stretching a fixed viewBox across the
+    // full width was smearing strokes and turning the dots into ellipses.
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="display:block;height:auto" role="img">';
+  }
+
+  function niceLabel(n){ return n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n); }
+
+  function renderSleepChart(dates, metrics){
+    const el = document.getElementById('sleep-chart');
+    const points = dates.map(d => metrics[d].sleepScore).filter(v => v !== null && v !== undefined);
+    if(points.length === 0){
+      el.innerHTML = '<div class="no-data">No sleep scores logged yet</div>';
+      return;
+    }
+    const avg = Math.round(points.reduce((a,b)=>a+b,0) / points.length);
+    const best = Math.max(...points), worst = Math.min(...points);
+    const w = 320, h = 132, padL = 26, padR = 8, padT = 12, padB = 20;
+    const lo = 40, hi = 100;
+    const yFor = v => padT + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (h - padT - padB);
+    const xFor = i => padL + (i / Math.max(1, dates.length - 1)) * (w - padL - padR);
+
+    let grid = '';
+    [40, 60, 80, 100].forEach(v => {
+      const y = yFor(v);
+      grid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (w-padR) + '" y2="' + y.toFixed(1) + '" stroke="var(--line)" stroke-width="1" />';
+      grid += '<text x="' + (padL-6) + '" y="' + (y+3).toFixed(1) + '" text-anchor="end" class="ax">' + v + '</text>';
+    });
+    // Shaded band for the 80+ "good sleep" zone.
+    const bandTop = yFor(100), bandBot = yFor(80);
+    grid = '<rect x="' + padL + '" y="' + bandTop.toFixed(1) + '" width="' + (w-padL-padR) + '" height="' + (bandBot-bandTop).toFixed(1) + '" fill="var(--fairway)" opacity="0.07" />' + grid;
+
+    const coords = dates.map((d, i) => {
+      const v = metrics[d].sleepScore;
+      return (v === null || v === undefined) ? null : [xFor(i), yFor(v), v];
+    });
+    let path = '', started = false;
+    coords.forEach(c => {
+      if(!c){ started = false; return; }
+      path += (started ? 'L' : 'M') + c[0].toFixed(1) + ',' + c[1].toFixed(1) + ' ';
+      started = true;
+    });
+    const dots = coords.map(c => c
+      ? '<circle cx="'+c[0].toFixed(1)+'" cy="'+c[1].toFixed(1)+'" r="3" fill="var(--bg)" stroke="var(--sky)" stroke-width="2"><title>'+c[2]+'</title></circle>'
+      : '').join('');
+    const avgY = yFor(avg);
+    const avgLine = '<line x1="'+padL+'" y1="'+avgY.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+avgY.toFixed(1)+'" stroke="var(--sand)" stroke-width="1" stroke-dasharray="3 3" opacity="0.7" />';
+
+    el.innerHTML =
+      '<div class="chart-label"><span>Last ' + TREND_DAYS + ' days</span><span class="avg">avg ' + avg + '</span></div>' +
+      svgOpen(w, h) + grid + avgLine +
+      '<path d="' + path + '" fill="none" stroke="var(--sky)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />' + dots +
+      '<text x="'+padL+'" y="'+(h-6)+'" class="ax">'+dates[0].slice(5)+'</text>' +
+      '<text x="'+(w-padR)+'" y="'+(h-6)+'" text-anchor="end" class="ax">today</text>' +
+      '</svg>' +
+      '<div class="chart-foot"><span>low ' + worst + '</span><span>high ' + best + '</span></div>';
+  }
+
+  function renderStepsChart(dates, metrics){
+    const el = document.getElementById('steps-chart');
+    const points = dates.map(d => metrics[d].steps).filter(v => v !== null && v !== undefined);
+    if(points.length === 0){
+      el.innerHTML = '<div class="no-data">No steps logged yet</div>';
+      return;
+    }
+    const avg = Math.round(points.reduce((a,b)=>a+b,0) / points.length);
+    const peak = Math.max(...points, 1);
+    const GOAL = 10000;
+    const top = Math.max(peak, GOAL) * 1.1;
+    const w = 320, h = 132, padL = 30, padR = 8, padT = 12, padB = 20;
+    const yFor = v => padT + (1 - v / top) * (h - padT - padB);
+    const slot = (w - padL - padR) / dates.length;
+    const barW = Math.max(4, slot - 3);
+
+    let grid = '';
+    [0, Math.round(top/2), Math.round(top)].forEach(v => {
+      const y = yFor(v);
+      grid += '<line x1="'+padL+'" y1="'+y.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+y.toFixed(1)+'" stroke="var(--line)" stroke-width="1" />';
+      grid += '<text x="'+(padL-6)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end" class="ax">'+niceLabel(v)+'</text>';
+    });
+    const goalY = yFor(GOAL);
+    grid += '<line x1="'+padL+'" y1="'+goalY.toFixed(1)+'" x2="'+(w-padR)+'" y2="'+goalY.toFixed(1)+'" stroke="var(--sand)" stroke-width="1" stroke-dasharray="4 3" opacity="0.8" />';
+
+    let bars = '';
+    dates.forEach((d, i) => {
+      const v = metrics[d].steps;
+      const x = padL + i * slot + (slot - barW) / 2;
+      if(v === null || v === undefined){
+        bars += '<rect x="'+x.toFixed(1)+'" y="'+(yFor(0)-2)+'" width="'+barW.toFixed(1)+'" height="2" rx="1" fill="var(--line)" />';
+        return;
+      }
+      const y = yFor(v), bh = Math.max(2, yFor(0) - y);
+      const fill = v >= GOAL ? 'var(--fairway)' : 'var(--fairway-dim)';
+      bars += '<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="2" fill="'+fill+'"><title>'+d+': '+v.toLocaleString()+'</title></rect>';
+    });
+
+    const hit = points.filter(v => v >= GOAL).length;
+    el.innerHTML =
+      '<div class="chart-label"><span>Last ' + TREND_DAYS + ' days</span><span class="avg">avg ' + avg.toLocaleString() + '</span></div>' +
+      svgOpen(w, h) + grid + bars +
+      '<text x="'+padL+'" y="'+(h-6)+'" class="ax">'+dates[0].slice(5)+'</text>' +
+      '<text x="'+(w-padR)+'" y="'+(h-6)+'" text-anchor="end" class="ax">today</text>' +
+      '</svg>' +
+      '<div class="chart-foot"><span>goal 10k</span><span>' + hit + ' of ' + points.length + ' days hit it</span></div>';
+  }
+
+  function switchView(view){
+    activeView = view;
+    document.getElementById('today-view').style.display = view === 'today' ? '' : 'none';
+    document.getElementById('progress-view').style.display = view === 'progress' ? '' : 'none';
+    document.querySelectorAll('.view-btn').forEach(b => b.setAttribute('data-active', String(b.dataset.view === view)));
+    if(view === 'progress') renderProgress();
+  }
+
+  async function init(){
+    const now = new Date();
+    todayKey = dateKey(now);
+    document.getElementById('date-line').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+    const h = now.getHours();
+    const partOfDay = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : h < 21 ? 'Good evening' : 'Still up';
+    const name = window.__displayName || '';
+    document.getElementById('greeting').textContent = name ? partOfDay + ', ' + name : partOfDay;
+
+    items = await loadItems();
+    await migrateCompletionKeys();
+    completions = await loadCompletions(todayKey);
+    if(!(await loadRoster(todayKey))) await safeSet('roster:' + todayKey, JSON.stringify(allItemKeys()));
+    renderToday();
+    refreshStreak();
+
+    const todayMetrics = await loadMetrics(todayKey);
+    const sleepInput = document.getElementById('sleep-input');
+    const stepsInput = document.getElementById('steps-input');
+    if(todayMetrics.sleepScore !== null && todayMetrics.sleepScore !== undefined) sleepInput.value = todayMetrics.sleepScore;
+    if(todayMetrics.steps !== null && todayMetrics.steps !== undefined) stepsInput.value = todayMetrics.steps;
+
+    async function persistMetrics(){
+      const m = {
+        sleepScore: sleepInput.value === '' ? null : Number(sleepInput.value),
+        steps: stepsInput.value === '' ? null : Number(stepsInput.value)
+      };
+      await saveMetrics(m);
+    }
+    sleepInput.addEventListener('change', persistMetrics);
+    stepsInput.addEventListener('change', persistMetrics);
+
+    document.getElementById('add-btn').addEventListener('click', addItem);
+    document.getElementById('add-input').addEventListener('keydown', (e) => { if(e.key === 'Enter') addItem(); });
+
+    document.getElementById('view-switch').addEventListener('click', (e) => {
+      const btn = e.target.closest('.view-btn');
+      if(btn) switchView(btn.dataset.view);
+    });
+    switchView('today');
+  }
+
+  window.__startApp = init;
+  window.__reloadAppFromStorage = async function(){
+    items = await loadItems();
+    completions = await loadCompletions(todayKey);
+    renderToday();
+    refreshStreak();
+    const todayMetrics = await loadMetrics(todayKey);
+    const sleepInput = document.getElementById('sleep-input');
+    const stepsInput = document.getElementById('steps-input');
+    sleepInput.value = (todayMetrics.sleepScore !== null && todayMetrics.sleepScore !== undefined) ? todayMetrics.sleepScore : '';
+    stepsInput.value = (todayMetrics.steps !== null && todayMetrics.steps !== undefined) ? todayMetrics.steps : '';
+    if(activeView === 'progress') renderProgress();
+  };
+})();
+
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
